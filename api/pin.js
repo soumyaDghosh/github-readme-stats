@@ -1,12 +1,15 @@
-import { renderRepoCard } from "../src/cards/repo-card.js";
+// @ts-check
+
+import { renderRepoCard } from "../src/cards/repo.js";
 import { blacklist } from "../src/common/blacklist.js";
 import {
-  clampValue,
-  CONSTANTS,
-  parseBoolean,
-  renderError,
-} from "../src/common/utils.js";
-import { fetchRepo } from "../src/fetchers/repo-fetcher.js";
+  resolveCacheSeconds,
+  setCacheHeaders,
+  setErrorCacheHeaders,
+} from "../src/common/cache.js";
+import { whitelist } from "../src/common/envs.js";
+import { CONSTANTS, parseBoolean, renderError } from "../src/common/utils.js";
+import { fetchRepo } from "../src/fetchers/repo.js";
 import { isLocaleAvailable } from "../src/translations.js";
 
 export default async (req, res) => {
@@ -24,49 +27,67 @@ export default async (req, res) => {
     locale,
     border_radius,
     border_color,
+    description_lines_count,
   } = req.query;
 
   res.setHeader("Content-Type", "image/svg+xml");
 
-  if (blacklist.includes(username)) {
-    return res.send(renderError("Something went wrong"));
+  if (whitelist && !whitelist.includes(username)) {
+    return res.send(
+      renderError(
+        "This username is not whitelisted",
+        "Please deploy your own instance",
+        {
+          title_color,
+          text_color,
+          bg_color,
+          border_color,
+          theme,
+          show_repo_link: false,
+        },
+      ),
+    );
+  }
+
+  if (whitelist === undefined && blacklist.includes(username)) {
+    return res.send(
+      renderError(
+        "This username is blacklisted",
+        "Please deploy your own instance",
+        {
+          title_color,
+          text_color,
+          bg_color,
+          border_color,
+          theme,
+          show_repo_link: false,
+        },
+      ),
+    );
   }
 
   if (locale && !isLocaleAvailable(locale)) {
-    return res.send(renderError("Something went wrong", "Language not found"));
+    return res.send(
+      renderError("Something went wrong", "Language not found", {
+        title_color,
+        text_color,
+        bg_color,
+        border_color,
+        theme,
+      }),
+    );
   }
 
   try {
     const repoData = await fetchRepo(username, repo);
+    const cacheSeconds = resolveCacheSeconds({
+      requested: parseInt(cache_seconds, 10),
+      def: CONSTANTS.PIN_CARD_CACHE_SECONDS,
+      min: CONSTANTS.ONE_DAY,
+      max: CONSTANTS.TEN_DAY,
+    });
 
-    let cacheSeconds = clampValue(
-      parseInt(cache_seconds || CONSTANTS.FOUR_HOURS, 10),
-      CONSTANTS.FOUR_HOURS,
-      CONSTANTS.ONE_DAY,
-    );
-    cacheSeconds = process.env.CACHE_SECONDS
-      ? parseInt(process.env.CACHE_SECONDS, 10) || cacheSeconds
-      : cacheSeconds;
-
-    /*
-      if star count & fork count is over 1k then we are kFormating the text
-      and if both are zero we are not showing the stats
-      so we can just make the cache longer, since there is no need to frequent updates
-    */
-    const stars = repoData.starCount;
-    const forks = repoData.forkCount;
-    const isBothOver1K = stars > 1000 && forks > 1000;
-    const isBothUnder1 = stars < 1 && forks < 1;
-    if (!cache_seconds && (isBothOver1K || isBothUnder1)) {
-      cacheSeconds = CONSTANTS.FOUR_HOURS;
-    }
-
-    res.setHeader(
-      "Cache-Control",
-      `max-age=${
-        cacheSeconds / 2
-      }, s-maxage=${cacheSeconds}, stale-while-revalidate=${CONSTANTS.ONE_DAY}`,
-    );
+    setCacheHeaders(res, cacheSeconds);
 
     return res.send(
       renderRepoCard(repoData, {
@@ -80,10 +101,19 @@ export default async (req, res) => {
         border_color,
         show_owner: parseBoolean(show_owner),
         locale: locale ? locale.toLowerCase() : null,
+        description_lines_count,
       }),
     );
   } catch (err) {
-    res.setHeader("Cache-Control", `no-cache, no-store, must-revalidate`); // Don't cache error responses.
-    return res.send(renderError(err.message, err.secondaryMessage));
+    setErrorCacheHeaders(res);
+    return res.send(
+      renderError(err.message, err.secondaryMessage, {
+        title_color,
+        text_color,
+        bg_color,
+        border_color,
+        theme,
+      }),
+    );
   }
 };

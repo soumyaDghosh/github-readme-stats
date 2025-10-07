@@ -17,7 +17,7 @@ import {
   renderTopLanguages,
   MIN_CARD_WIDTH,
   getDefaultLanguagesCountByLayout,
-} from "../src/cards/top-languages-card.js";
+} from "../src/cards/top-languages.js";
 import { expect, it, describe } from "@jest/globals";
 
 // adds special assertions like toHaveTextContent
@@ -70,7 +70,9 @@ const langPercentFromDonutLayoutSvg = (d, centerX, centerY) => {
     cartesianToPolar(centerX, centerY, dTmp[0], dTmp[1]).angleInDegrees + 90;
   let startAngle =
     cartesianToPolar(centerX, centerY, dTmp[7], dTmp[8]).angleInDegrees + 90;
-  if (startAngle > endAngle) startAngle -= 360;
+  if (startAngle > endAngle) {
+    startAngle -= 360;
+  }
   return (endAngle - startAngle) / 3.6;
 };
 
@@ -522,9 +524,10 @@ describe("Test renderTopLanguages", () => {
 
       expect(headerStyles.fill.trim()).toBe(`#${themes[name].title_color}`);
       expect(langNameStyles.fill.trim()).toBe(`#${themes[name].text_color}`);
-      expect(queryByTestId(document.body, "card-bg")).toHaveAttribute(
-        "fill",
-        `#${themes[name].bg_color}`,
+      const backgroundElement = queryByTestId(document.body, "card-bg");
+      const backgroundElementFill = backgroundElement.getAttribute("fill");
+      expect([`#${themes[name].bg_color}`, "url(#gradient)"]).toContain(
+        backgroundElementFill,
       );
     });
   });
@@ -844,6 +847,42 @@ describe("Test renderTopLanguages", () => {
     document.body.innerHTML = renderTopLanguages({});
     expect(document.querySelector(".stat").textContent).toBe(
       "No languages data.",
+    );
+  });
+
+  it("should show proper stats format", () => {
+    document.body.innerHTML = renderTopLanguages(langs, {
+      layout: "compact",
+      stats_format: "percentages",
+    });
+
+    expect(queryAllByTestId(document.body, "lang-name")[0]).toHaveTextContent(
+      "HTML 40.00%",
+    );
+
+    expect(queryAllByTestId(document.body, "lang-name")[1]).toHaveTextContent(
+      "javascript 40.00%",
+    );
+
+    expect(queryAllByTestId(document.body, "lang-name")[2]).toHaveTextContent(
+      "css 20.00%",
+    );
+
+    document.body.innerHTML = renderTopLanguages(langs, {
+      layout: "compact",
+      stats_format: "bytes",
+    });
+
+    expect(queryAllByTestId(document.body, "lang-name")[0]).toHaveTextContent(
+      "HTML 200.0 B",
+    );
+
+    expect(queryAllByTestId(document.body, "lang-name")[1]).toHaveTextContent(
+      "javascript 200.0 B",
+    );
+
+    expect(queryAllByTestId(document.body, "lang-name")[2]).toHaveTextContent(
+      "css 100.0 B",
     );
   });
 });
